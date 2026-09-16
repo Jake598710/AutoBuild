@@ -293,6 +293,11 @@
     -- ══════════════════════════════════════════════════════════════════════
     PongiUI.TextScale = PongiUI.TextScale or 1
     PongiUI.SizeScale = PongiUI.SizeScale or 1
+    -- auto resize is OPT-IN: while false everything below no-ops and the UI is
+    -- byte-for-byte the pre-responsive behaviour (original TextSize, no
+    -- AutomaticSize patching). Flip with _G.PONGI_UI_RESPONSIVE = true, or just
+    -- call PongiUI:SetResponsiveScale(...) / set PONGI_UI_TEXT_SCALE.
+    PongiUI.Responsive = PongiUI.Responsive == true
     local rsBase = setmetatable({}, { __mode = 'k' })
 
     local function rsEntry(g)
@@ -323,8 +328,13 @@
         local o = math.floor(b[2] * factor + 0.5)
         if v.Offset ~= o then pcall(function() g[p] = UDim.new(b[1], o) end) end
     end
-    local function rsApplyOne(g, tf, sf)
+    local function rsApplyOne(g, tf, sf, force)
         if not g or not g.Parent then return end
+        -- single choke point. Disabled (factors 1.0) means NOTHING is touched, so the
+        -- UI stays exactly as the original code built it; `force` is only used for an
+        -- explicit restore pass, which just writes recorded bases back.
+        local scaling = (tf or 1) ~= 1 or (sf or 1) ~= 1
+        if not scaling and not force then return end
         if rsNum(g, 'TextSize') ~= nil then
             rsScaleNumber(g, 'TextSize', tf, 9)
         end
@@ -338,6 +348,7 @@
         elseif g:IsA('UICorner') then
             rsScaleUDim(g, 'CornerRadius', sf)
         end
+        if not scaling then return end
         -- engine trap: a TextWrapped label whose wrapped text is TALLER than its
         -- fixed height renders that line not at all (text silently vanishes on
         -- small viewports). Let those grow instead of fighting the shrink.
@@ -352,24 +363,38 @@
             end
         end
     end
-    function PongiUI:ApplyResponsiveScale(rootOverride)
+    function PongiUI:ApplyResponsiveScale(rootOverride, force)
         local root = rootOverride or (Window and Window._root)
         if not root then return end
         local tf, sf = PongiUI.TextScale or 1, PongiUI.SizeScale or 1
+        if not force and tf == 1 and sf == 1 then return end
         local okList, list = pcall(function() return root:GetDescendants() end)
         if okList then
-            for _, g in ipairs(list) do rsApplyOne(g, tf, sf) end
+            for _, g in ipairs(list) do rsApplyOne(g, tf, sf, force) end
         end
-        rsApplyOne(root, tf, sf)
+        rsApplyOne(root, tf, sf, force)
     end
     function PongiUI:SetResponsiveScale(tf, sf)
         PongiUI.TextScale = math.clamp(tf or 1, 0.6, 1.2)
         PongiUI.SizeScale = math.clamp(sf or 1, 0.6, 1.2)
-        PongiUI:ApplyResponsiveScale()
+        local on = PongiUI.TextScale ~= 1 or PongiUI.SizeScale ~= 1
+        PongiUI.Responsive = on
+        pcall(function() _G.PONGI_UI_RESPONSIVE = on end)
+        PongiUI:ApplyResponsiveScale(nil, true)
+    end
+    local function rsEnabled()
+        local en = PongiUI.Responsive == true
+        pcall(function()
+            if _G.PONGI_UI_RESPONSIVE ~= nil then en = not not _G.PONGI_UI_RESPONSIVE end
+            -- an explicit scale always implies "on"
+            if tonumber(_G.PONGI_UI_TEXT_SCALE) or tonumber(_G.PONGI_UI_SIZE_SCALE) then en = true end
+        end)
+        return en
     end
     -- reference viewport is 1080p: Roblox hands a phone a much smaller logical
     -- viewport (landscape ~720), so identical TextSize looks far larger there.
     local function rsComputeFactors()
+        if not rsEnabled() then return 1, 1 end
         local vpY = 1080
         pcall(function()
             local cam = workspace.CurrentCamera
