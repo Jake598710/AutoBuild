@@ -380,6 +380,10 @@
         local keyboard = true
         pcall(function() keyboard = UserInputService.KeyboardEnabled end)
         local mobile = touch and not keyboard
+        -- test the phone path from a PC without a phone
+        pcall(function()
+            if _G.PONGI_UI_FORCE_MOBILE then mobile = true end
+        end)
         local tf = math.clamp(vpY / 1080, 0.80, 1.05)
         if mobile then tf = math.max(0.74, tf - 0.06) end
         local sf = math.clamp(vpY / 1080, 0.85, 1)
